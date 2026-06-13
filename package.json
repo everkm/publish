@@ -1,7 +1,11 @@
 {
   "name": "everkm-publish",
   "version": "0.16.15",
-  "description": "",
+  "description": "Everkm Publish CLI — npm wrapper with platform binaries",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/everkm/everkm-publish-npm.git"
+  },
   "scripts": {
     "postinstall": "node install.js",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -16,9 +20,6 @@
     "everkm-publish": "bin/everkm-publish"
   },
   "dependencies": {
-    "adm-zip": "^0.5.10",
-    "decompress": "^4.2.1",
-    "nodejs-file-downloader": "^4.12.1",
-    "tar": "^6.1.13"
+    "adm-zip": "^0.5.10"
   }
 }

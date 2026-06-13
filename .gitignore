@@ -19,3 +19,6 @@ var
 note-app/static_embed/template/*
 note-app/static_embed/fe_static/*
 *.bin
+publish-artifacts/
+.venv/
+__pycache__
