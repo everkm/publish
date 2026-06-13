@@ -4,7 +4,7 @@
   "description": "Everkm Publish CLI — npm wrapper with platform binaries",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/everkm/everkm-publish-npm.git"
+    "url": "git+https://github.com/everkm/publish.git"
   },
   "scripts": {
     "postinstall": "node install.js",

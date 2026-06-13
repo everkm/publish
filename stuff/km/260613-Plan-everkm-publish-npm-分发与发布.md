@@ -1,7 +1,8 @@
-# everkm-publish-npm — CDN 分发与自动 npm 发布 — 架构设计（Plan）
+# everkm/publish — CDN 分发与自动 npm 发布 — 架构设计（Plan）
 
 > **文档性质**：目标架构 + 职责拆分方案（2026-06-13）  
-> **状态**：**方案阶段，编码实施需等待明确指令后再开工**  
+> **仓库**：GitHub [`everkm/publish`](https://github.com/everkm/publish)（`everkm-publish-npm` 仅为本地/历史别名，非独立仓库）  
+> **状态**：**已实施**（2026-06-13）  
 > **关联**：[ekmp-themes 架构设计](../../../ekmp-themes/stuff/km/260612-架构设计.md)、[publish-theme.py](../../../ekmp-themes/scripts/publish-theme.py)、[publish-theme workflow notify](../../../ekmp-themes/.github/workflows/publish-theme.yaml)、[install.js](../../install.js)、[npm 发布问题记录](./npm-publish-everkm-publish-0.16.9.md)
 
 ---
@@ -13,12 +14,13 @@
 | 0.1 | 2026-06-13 | 初稿：tag 触发、Release → CDN → npm publish 全链路；install.js 三源回退（5s 超时） |
 | 0.2 | 2026-06-13 | 修订：单仓库一次 tag 完成编排；CDN key 前缀 `pkgs/{ver}/`；移除 daobox 兼容；补充 notify |
 | 0.3 | 2026-06-13 | 修订：二进制资产只读 `everkm/publish` Release；本仓库仅编排+CDN+npm；`latest.json` 增加 `notes`；workflow 优先复用成熟 Action；CDN 逻辑对齐 `publish-theme.py` |
+| 0.4 | 2026-06-13 | 澄清：本仓库即 `everkm/publish`；`everkm-publish-npm` 仅为别名；两种 tag 同仓分工 |
 
 ---
 
 ## 1. 一句话
 
-**在本仓库 push 一次 tag `v{ver}`，GitHub Action 从 `everkm/publish` Release 拉取全部资产、镜像至 R2 / 七牛（`pkgs/{ver}/`），再 `npm publish`；客户端 `postinstall` 按 .com → `everkm/publish` GitHub → .cn 下载，单源超时 5s 即切换。**
+**在 `everkm/publish` 本仓库 push tag `v{ver}`，GitHub Action 从同仓 Release（`everkm-publish@v{ver}`）拉取全部资产、镜像至 R2 / 七牛（`pkgs/{ver}/`），再 `npm publish`；客户端 `postinstall` 按 .com → GitHub Release → .cn 下载，单源超时 5s 即切换。**
 
 ---
 
@@ -28,7 +30,7 @@
 
 | 环节 | 当前实现 | 问题 |
 |------|----------|------|
-| 二进制构建与 Release | `everkm/publish` 仓库 | ✅ 保留，本仓库不重复构建 |
+| 二进制构建与 Release | 本仓库 tag `everkm-publish@v*` | ✅ 保留既有构建流程 |
 | 二进制分发 | GitHub Release + 手工 daobox 镜像 | 与 ekmp-themes R2/七牛体系割裂 |
 | npm 安装 | `install.js` postinstall 单 URL 或环境变量 | 逻辑有 bug；无多源回退 |
 | npm 发布 | 本地手动 `npm publish` | 易漏发、版本不同步 |
@@ -38,28 +40,28 @@
 
 1. **收口密钥**：CDN / npm 凭证仅在本仓库 CI。
 2. **对齐 ekmp-themes**：同 R2 / 七牛桶、`ekmp-assets.everkm.com` / `.cn`；key 前缀 **`pkgs/{ver}/`**；上传逻辑复用 `publish-theme.py` 模式。
-3. **职责清晰**：`everkm/publish` 只产二进制 Release；**本仓库只负责**拉取 → CDN → npm，不托管二进制 Release。
-4. **一次 tag（编排侧）**：本仓库 push `v{ver}` 触发 workflow；前提为 `everkm/publish` 对应 Release 已就绪。
-5. **安装体验**：.com CDN 优先；`everkm/publish` GitHub 为第 2 顺位；.cn 为第 3 顺位；每源 5s 超时。
+3. **职责清晰（同仓两种 tag）**：`everkm-publish@v{ver}` 产二进制 Release；`v{ver}` 触发 CDN 镜像 + npm publish。
+4. **编排 tag**：push `v{ver}` 触发 workflow；前提为同仓 Release `everkm-publish@v{ver}` 已就绪。
+5. **安装体验**：.com CDN 优先；本仓 GitHub Release 为第 2 顺位；.cn 为第 3 顺位；每源 5s 超时。
 6. **可观测**：workflow 结束 `notify.dayu.me` → Telegram。
 
 ---
 
-## 3. 两仓分工与本仓库职责
+## 3. 单仓职责与两种 tag
+
+> GitHub 仓库：**`everkm/publish`**（本仓库）。`everkm-publish-npm` 仅为本地目录/历史别名。
 
 ```mermaid
 flowchart TD
-  subgraph publish_repo [everkm/publish — 二进制，不在本仓库实施]
+  subgraph publish_repo [everkm/publish — 本仓库]
     P1[tag everkm-publish@v*]
     P2[构建多平台 zip]
     P3[GitHub Release + notes]
     P1 --> P2 --> P3
-  end
 
-  subgraph npm_repo [everkm-publish-npm — 本仓库]
     T[push tag v*] --> W[GitHub Action]
     W --> R1[解析版本]
-    R1 --> R2[读 everkm/publish Release]
+    R1 --> R2[读同仓 Release everkm-publish@v*]
     R2 --> R3[下载全部 assets]
     R3 --> R4[上传 R2 + 七牛 pkgs/ver/]
     R4 --> R5[写入 pkgs/latest.json 含 notes]
@@ -70,7 +72,7 @@ flowchart TD
 
   subgraph client [用户机器]
     C1[npm install] --> C2[install.js]
-    C2 --> C3[.com → everkm/publish GH → .cn]
+    C2 --> C3[.com → GitHub Release → .cn]
   end
 
   P3 -->|只读拉取| R2
@@ -81,12 +83,13 @@ flowchart TD
 
 **关键原则**：
 
-| 仓库 | 职责 |
+| tag | 职责 |
 |------|------|
-| **`everkm/publish`** | 编译二进制、创建 Release（tag `everkm-publish@v{ver}`）、维护 Release notes |
-| **`everkm-publish-npm`（本仓库）** | tag `v{ver}` 触发 workflow → **只读**拉取上游 Release → 上传 CDN → `npm publish` → 通知 |
+| **`everkm-publish@v{ver}`** | 编译二进制、创建 GitHub Release、维护 Release notes |
+| **`v{ver}`** | 触发 workflow → **只读**拉取同仓 Release → 上传 CDN → `npm publish` → 通知 |
 
-- 本仓库**不**创建二进制 Release、**不**重复编译。
+- 两种 tag 均在 **`everkm/publish`**，不存在独立的 `everkm-publish-npm` 仓库。
+- workflow **不**重复编译二进制，仅镜像已有 Release 资产。
 - **不使用** `repository_dispatch`。
 - CDN 上传复用 `publish-theme.py` 的 `upload_file_both` / `upload_r2` / `upload_qiniu` / `cdn_refresh_urls` 模式（可抽公共模块或复制最小子集）。
 
@@ -95,10 +98,10 @@ flowchart TD
 | 编号 | 步骤 | 说明 |
 |------|------|------|
 | W-1 | 解析版本 | 本仓库 tag `v{ver}` → `{ver}` |
-| W-2 | 校验上游 Release | `GET /repos/everkm/publish/releases/tags/everkm-publish@v{ver}`；不存在 / draft → fail |
+| W-2 | 校验 Release | `GET /repos/everkm/publish/releases/tags/everkm-publish@v{ver}`；不存在 / draft → fail |
 | W-3 | 版本短路 | registry 已有同版本且 CDN 齐全 → 跳过 npm（exit 2）；`force_cdn` 强制重传 |
-| W-4 | 列举并下载 assets | 取上游 `assets[]`，逐个下载 → `publish-artifacts/{ver}/` |
-| W-5 | 读取 Release notes | 取上游 `release.body`（Markdown 原文），写入 `latest.json` 的 `notes` 字段 |
+| W-4 | 列举并下载 assets | 取 Release `assets[]`，逐个下载 → `publish-artifacts/{ver}/` |
+| W-5 | 读取 Release notes | 取同仓 Release `body`（Markdown 原文），写入 `latest.json` 的 `notes` 字段 |
 | W-6 | 上传 CDN | 同一套文件上传 R2 + 七牛，key `pkgs/{ver}/{asset_name}` |
 | W-7 | 写入 latest | 生成 `pkgs/latest.json`（§5.3）并上传 |
 | W-8 | 七牛刷新 | `cdnrefresh` `.cn` 侧 zip + `latest.json` |
@@ -112,18 +115,18 @@ flowchart TD
 |--------|------|
 | `CF_S3_AK` / `CF_S3_SK` | R2 上传 |
 | `QINIU_ACCESS_KEY` / `QINIU_SECRET_KEY` | 七牛上传 + cdnrefresh |
-| `GH_TOKEN` | 读 `everkm/publish` Release（未设置时回退 `GITHUB_TOKEN`） |
+| `GH_TOKEN` | 读本仓 Release（未设置时回退 `GITHUB_TOKEN`） |
 | `NPM_TOKEN` | npm 发布 |
 
 ### 3.3 发版前置条件
 
-workflow 运行前，`everkm/publish` 须已存在：
+workflow 运行前，本仓库须已存在：
 
 - tag：`everkm-publish@v{ver}`
 - Release 含全部平台 zip（§4.1）
 - Release notes 已填写（将复制到 `latest.json.notes`）
 
-本仓库 tag `v{ver}` 仅触发编排，**不**代替上游构建发版。
+tag `v{ver}` 仅触发 CDN + npm 编排，**不**代替二进制构建发版。
 
 ---
 
@@ -137,7 +140,7 @@ workflow 运行前，`everkm/publish` 须已存在：
 | `linux x64` | `EverkmPublish_{ver}_linux-amd64.zip` | `everkm-publish.bin` |
 | `win32 x64` | `EverkmPublish_{ver}_windows-amd64.zip` | `everkm-publish.exe` |
 
-### 4.2 上游 Release 标识（`everkm/publish`）
+### 4.2 Release 标识（本仓库 `everkm/publish`）
 
 | 字段 | 值 |
 |------|-----|
@@ -147,13 +150,13 @@ workflow 运行前，`everkm/publish` 须已存在：
 | 资产 URL（install 回退源 #2） | `https://github.com/everkm/publish/releases/download/everkm-publish%40v{ver}/{asset_name}` |
 | notes 来源 | 上述 Release 的 `body` 字段 → `latest.json.notes` |
 
-### 4.3 本仓库 tag（仅触发编排）
+### 4.3 编排 tag（CDN + npm）
 
-| 仓库 | tag | 解析 `{ver}` |
-|------|-----|--------------|
-| `everkm-publish-npm` | `v{ver}` | 去掉 `v` 前缀 |
+| tag | 解析 `{ver}` |
+|-----|--------------|
+| `v{ver}` | 去掉 `v` 前缀 |
 
-**发版 SOP 顺序**见 §12：先上游 Release，再本仓库 tag。
+**发版 SOP 顺序**见 §12：先 `everkm-publish@v*`，再 `v*`。
 
 ---
 
@@ -162,7 +165,7 @@ workflow 运行前，`everkm/publish` 须已存在：
 | 顺位 | 用途 | 来源 |
 |------|------|------|
 | 1 | 主下载 | `https://ekmp-assets.everkm.com/pkgs/{ver}/...` |
-| 2 | GitHub 回退 | **`everkm/publish` Release** |
+| 2 | GitHub 回退 | **本仓 Release**（`everkm/publish`） |
 | 3 | 国内回退 | `https://ekmp-assets.everkm.cn/pkgs/{ver}/...` |
 
 R2 / 七牛桶：**`ekmp-assets`**，key 前缀 **`pkgs/{ver}/`**。
@@ -212,10 +215,10 @@ W-4 自 everkm/publish 下载的全部资产
 
 | 字段 | 说明 |
 |------|------|
-| `version` | semver，与 npm / 上游一致 |
-| `tag` | 上游 `everkm/publish` Release tag |
-| **`notes`** | **自上游 Release `body` 原样复制**（Markdown 字符串；空 body 时为 `""`） |
-| `assets[].download_urls` | 固定三条：**.com → `everkm/publish` GitHub → .cn** |
+| `version` | semver，与 npm / Release 一致 |
+| `tag` | 本仓 Release tag（`everkm-publish@v{ver}`） |
+| **`notes`** | **自同仓 Release `body` 原样复制**（Markdown 字符串；空 body 时为 `""`） |
+| `assets[].download_urls` | 固定三条：**.com → GitHub Release → .cn** |
 
 ---
 
@@ -238,7 +241,7 @@ W-4 自 everkm/publish 下载的全部资产
 | 项 | 说明 |
 |----|------|
 | 超时 | 单源 5s，失败切下一源 |
-| GitHub 源 | **固定 `everkm/publish`**，非本仓库 |
+| GitHub 源 | **本仓 `everkm/publish` Release** |
 | 清理 | 移除 `EVERKM_PUBLISH_BINARY` / daobox；修复既有 bug |
 | 依赖 | 移除 `decompress`、`tar`；保留 `adm-zip` |
 
@@ -306,7 +309,7 @@ on:
 | `install.js` | §6（待指令） |
 | `package.json` / `README.md` | 版本与发版说明 |
 
-**不新增** `build-release.yaml`（构建留在上游 `everkm/publish`）。
+**不新增** `build-release.yaml`（二进制构建沿用既有 `everkm/publish` 流程）。
 
 ### 8.2 publish-npm-package.py 职责
 
@@ -456,31 +459,29 @@ jobs:
 | daobox / `EVERKM_PUBLISH_BINARY` | 废弃，不兼容 |
 | install.js 单 URL | `pkgs/{ver}/` 三源；GitHub 固定 `everkm/publish` |
 | 手工 CDN 镜像 | 本仓库 workflow 自动 |
-| 本仓库托管二进制 Release（0.2） | 撤销；二进制仅 `everkm/publish` |
+| 本仓库托管二进制 Release（0.2 草案） | 撤销；二进制 Release 仍在同仓 `everkm/publish` |
 
 ---
 
 ## 11. 开放问题（实施前确认）
 
-1. **上游 Release 就绪策略**：本仓库 tag 时若 `everkm/publish` Release 不存在，workflow 直接 fail 是否可接受？
+1. **Release 就绪策略**：push `v{ver}` 时若同仓 Release `everkm-publish@v{ver}` 不存在，workflow 直接 fail 是否可接受？
 2. **npm 已存在**：CDN 仍上传、npm skip（exit 2）？
 3. **NPM_TOKEN** 类型与包 ownership。
 4. **linux arm64** 是否纳入首版？
-5. **`notes` 格式**：上游 `body` 为空时写 `""` 还是省略字段？（建议保留字段，值为 `""`）
+5. **`notes` 格式**：Release `body` 为空时写 `""` 还是省略字段？（建议保留字段，值为 `""`）
 
 ---
 
 ## 12. 发版 SOP（实施后）
 
 ```bash
-# 1. 上游：everkm/publish 发布二进制 Release（含 notes）
-cd everkm/publish
+# 1. 本仓库 everkm/publish：发布二进制 Release（含 notes）
 git tag everkm-publish@v0.17.0
 git push origin everkm-publish@v0.17.0
 # 等待构建完成，确认 Release 资产 + Release notes
 
-# 2. 本仓库：一次 tag 触发 CDN + npm
-cd everkm-publish-npm
+# 2. 同仓：semver tag 触发 CDN + npm
 git tag v0.17.0
 git push origin v0.17.0
 

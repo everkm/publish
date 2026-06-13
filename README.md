@@ -16,20 +16,24 @@ pnpm add everkm-publish
 
 ## Release (maintainers)
 
-1. **Upstream** — in `everkm/publish`, publish binary Release with notes:
+本仓库即 [`everkm/publish`](https://github.com/everkm/publish)（`everkm-publish-npm` 仅为本地/历史别名）。
+
+1. **Binary Release** — tag 触发构建并发布 GitHub Release（含 notes）:
 
    ```bash
    git tag everkm-publish@v0.17.0
    git push origin everkm-publish@v0.17.0
    ```
 
-2. **This repo** — one tag triggers CDN mirror + npm publish:
+   等待构建完成，确认 Release 资产与 notes。
+
+2. **CDN + npm** — semver tag 触发 CDN 镜像与 npm publish:
 
    ```bash
    git tag v0.17.0
    git push origin v0.17.0
 
-   # By makefile
+   # or via Makefile
    make tag TAG=v0.17.0
    ```
 
