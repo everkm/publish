@@ -4,7 +4,7 @@
 publish-npm-package.py
 
 从 everkm/publish GitHub Release 拉取全部资产，镜像至 R2 / 七牛（pkgs/{ver}/），
-生成 pkgs/latest.json（含上游 Release notes）。
+生成 pkgs/latest.json 与 pkgs/{ver}/meta.json（含上游 Release notes）。
 
 环境变量：
 - GH_TOKEN / GITHUB_TOKEN — 读 everkm/publish Release
@@ -241,6 +241,8 @@ def cdn_assets_complete(s3_client: Any, version: str, asset_names: list[str]) ->
     for name in asset_names:
         if not object_exists(s3_client, pkg_key(version, name)):
             return False
+    if not object_exists(s3_client, pkg_key(version, "meta.json")):
+        return False
     latest_key = "pkgs/latest.json"
     if not object_exists(s3_client, latest_key):
         return False
@@ -249,6 +251,7 @@ def cdn_assets_complete(s3_client: Any, version: str, asset_names: list[str]) ->
 
 def cdn_refresh_urls(version: str, asset_names: list[str]) -> None:
     urls = [f"{CDN_CN}/pkgs/{version}/{name}" for name in asset_names]
+    urls.append(f"{CDN_CN}/pkgs/{version}/meta.json")
     urls.append(f"{CDN_CN}/pkgs/latest.json")
     ak = os.environ.get("QINIU_ACCESS_KEY")
     sk = os.environ.get("QINIU_SECRET_KEY")
@@ -324,10 +327,22 @@ def publish(
                 skip_if_exists=not force_cdn,
             )
 
-        latest = build_latest_json(version, tag, notes, asset_names)
+        meta = build_latest_json(version, tag, notes, asset_names)
+
+        meta_path = work_dir / "meta.json"
+        with meta_path.open("w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        upload_file_both(
+            s3_client,
+            meta_path,
+            pkg_key(version, "meta.json"),
+            skip_if_exists=not force_cdn,
+        )
+
         latest_path = work_dir / "latest.json"
         with latest_path.open("w", encoding="utf-8") as f:
-            json.dump(latest, f, indent=2, ensure_ascii=False)
+            json.dump(meta, f, indent=2, ensure_ascii=False)
             f.write("\n")
         upload_file_both(
             s3_client,
