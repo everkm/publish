@@ -235,6 +235,22 @@ def npm_version_exists(version: str) -> bool:
         return False
 
 
+def latest_json_version(s3_client: Any) -> str | None:
+    latest_key = "pkgs/latest.json"
+    try:
+        resp = s3_client.get_object(Bucket=R2_BUCKET, Key=latest_key)
+        data = json.loads(resp["Body"].read())
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code")
+        if code in ("404", "NoSuchKey", "NotFound"):
+            return None
+        raise
+    except (json.JSONDecodeError, TypeError):
+        return None
+    version = data.get("version")
+    return version if isinstance(version, str) and version else None
+
+
 def cdn_assets_complete(s3_client: Any, version: str, asset_names: list[str]) -> bool:
     if not asset_names:
         return False
@@ -243,8 +259,7 @@ def cdn_assets_complete(s3_client: Any, version: str, asset_names: list[str]) ->
             return False
     if not object_exists(s3_client, pkg_key(version, "meta.json")):
         return False
-    latest_key = "pkgs/latest.json"
-    if not object_exists(s3_client, latest_key):
+    if latest_json_version(s3_client) != version:
         return False
     return True
 
@@ -348,7 +363,7 @@ def publish(
             s3_client,
             latest_path,
             "pkgs/latest.json",
-            skip_if_exists=not force_cdn,
+            skip_if_exists=False,
         )
         cdn_refresh_urls(version, asset_names)
 
