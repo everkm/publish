@@ -222,7 +222,7 @@ main() {
 
   local work zip
   work="$(mktemp -d "${TMPDIR:-/tmp}/everkm-publish-install.XXXXXX")"
-  trap 'rm -rf "$work"' EXIT
+  trap "rm -rf '$work'" EXIT
   zip="$work/$(asset_name)"
 
   download_zip "$zip"
