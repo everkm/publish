@@ -31,13 +31,19 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
 import boto3
+import qiniu.config
 import requests
 from botocore.exceptions import ClientError
-from qiniu import Auth, put_file
+from qiniu import Auth, put_file_v2
+
+qiniu.config.set_default(connection_timeout=120, connection_retries=5)
+
+QINIU_RETRYABLE_STATUS = frozenset({502, 503, 504, 573, 579, 599})
 
 CDN_COM = "https://ekmp-assets.everkm.com"
 CDN_CN = "https://ekmp-assets.everkm.cn"
@@ -126,16 +132,47 @@ def upload_r2(s3_client: Any, local_path: Path, key: str) -> None:
     )
 
 
-def upload_qiniu(local_path: Path, key: str) -> None:
+def upload_qiniu(
+    local_path: Path,
+    key: str,
+    *,
+    max_attempts: int = 3,
+) -> None:
     ak = os.environ.get("QINIU_ACCESS_KEY")
     sk = os.environ.get("QINIU_SECRET_KEY")
     if not ak or not sk:
         raise RuntimeError("QINIU_ACCESS_KEY / QINIU_SECRET_KEY required for upload")
     auth = Auth(ak, sk)
     token = auth.upload_token(R2_BUCKET, key)
-    _, info = put_file(token, key, str(local_path))
-    if info.status_code != 200:
-        raise RuntimeError(f"qiniu upload failed key={key} status={info.status_code}")
+    last_status: int | None = None
+
+    for attempt in range(1, max_attempts + 1):
+        _, info = put_file_v2(
+            token,
+            key,
+            str(local_path),
+            bucket_name=R2_BUCKET,
+        )
+        if info.status_code == 200:
+            return
+        last_status = info.status_code
+        if info.status_code not in QINIU_RETRYABLE_STATUS or attempt == max_attempts:
+            break
+        delay = min(30, 2 ** attempt)
+        logger.warning(
+            "[WARN] qiniu upload attempt %d/%d failed key=%s status=%s, retry in %ds",
+            attempt,
+            max_attempts,
+            key,
+            info.status_code,
+            delay,
+        )
+        time.sleep(delay)
+
+    raise RuntimeError(
+        f"qiniu upload failed key={key} status={last_status} "
+        f"after {max_attempts} attempts"
+    )
 
 
 def upload_file_both(
@@ -146,10 +183,11 @@ def upload_file_both(
     skip_if_exists: bool = False,
 ) -> None:
     if skip_if_exists and object_exists(s3_client, key):
-        logger.info("[INFO] cache hit, skip upload: %s", key)
-        return
-    logger.info("[INFO] uploading: %s", key)
-    upload_r2(s3_client, local_path, key)
+        logger.info("[INFO] R2 cache hit, skip R2 upload: %s", key)
+    else:
+        logger.info("[INFO] uploading to R2: %s", key)
+        upload_r2(s3_client, local_path, key)
+    logger.info("[INFO] uploading to Qiniu: %s", key)
     upload_qiniu(local_path, key)
 
 
