@@ -187,6 +187,9 @@ def publish_chocolatey(version: str, *, force: bool = False) -> int:
         tools_dir.mkdir(parents=True, exist_ok=True)
         extract_exe(zip_path, tools_dir / EXE_NAME)
 
+        install_script = REPO_ROOT / "templates" / "chocolateyInstall.ps1"
+        shutil.copy2(install_script, tools_dir / "chocolateyInstall.ps1")
+
         nuspec_path = staging / f"{PACKAGE_ID}.nuspec"
         nuspec_path.write_text(
             render_nuspec(version, release_notes),

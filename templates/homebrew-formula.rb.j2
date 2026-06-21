@@ -14,7 +14,10 @@ class EverkmPublish < Formula
   end
 
   def install
-    bin.install "everkm-publish.bin" => "everkm-publish"
+    src = Dir["**/everkm-publish"].find { |f| File.file?(f) }
+    src ||= Dir["**/everkm-publish.bin"].find { |f| File.file?(f) }
+    odie "everkm-publish binary not found in archive" unless src
+    bin.install src => "everkm-publish"
   end
 
   test do

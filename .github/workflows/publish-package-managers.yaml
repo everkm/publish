@@ -81,8 +81,10 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_homebrew }}" = "true" ]; then
             args+=(--force)
           fi
+          set +e
           python scripts/publish-homebrew.py "${args[@]}"
           code=$?
+          set -e
           if [ "$code" -eq 2 ]; then
             echo "skipped=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -141,8 +143,10 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_chocolatey }}" = "true" ]; then
             args+=(--force)
           fi
+          set +e
           python scripts/publish-chocolatey.py "${args[@]}"
           code=$?
+          set -e
           if [ "$code" -eq 2 ]; then
             echo "skipped=true" >> "$GITHUB_OUTPUT"
             exit 0

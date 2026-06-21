@@ -418,7 +418,7 @@ def main() -> int:
     parser.add_argument(
         "--force-cdn",
         action="store_true",
-        help="Force re-upload even if CDN objects exist",
+        help="Force re-upload CDN objects and refresh Qiniu cache",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()

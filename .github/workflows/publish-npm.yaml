@@ -15,7 +15,7 @@ on:
         type: boolean
         default: false
       force_cdn:
-        description: "强制重传 CDN（忽略已存在）"
+        description: "强制重传 CDN 并刷新七牛缓存（忽略已存在）"
         type: boolean
         default: false
 
@@ -69,8 +69,10 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_cdn }}" = "true" ]; then
             args+=(--force-cdn)
           fi
+          set +e
           python scripts/publish-npm-package.py "${args[@]}"
           code=$?
+          set -e
           echo "version=${{ steps.ver.outputs.version }}" >> "$GITHUB_OUTPUT"
           if [ "$code" -eq 2 ]; then
             echo "skipped=true" >> "$GITHUB_OUTPUT"

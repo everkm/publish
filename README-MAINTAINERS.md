@@ -44,8 +44,9 @@
    # curl 安装脚本（Linux / macOS）
    curl -fsSL https://ekmp-assets.everkm.com/install.sh | bash
 
-   # Homebrew
+   # Homebrew（若曾 tap 过旧版，先更新：`brew untap everkm/tap && brew tap everkm/tap`）
    brew tap everkm/tap
+   brew trust everkm/tap
    brew install everkm-publish
 
    # Chocolatey（Windows）
@@ -56,7 +57,7 @@
 
 | 场景 | Actions workflow | 说明 |
 |------|------------------|------|
-| 仅 CDN / npm | **Publish NPM Package** → `workflow_dispatch` | 可选 `skip_npm`、`force_cdn` |
+| 仅 CDN / npm | **Publish NPM Package** → `workflow_dispatch` | 可选 `skip_npm`、`force_cdn`（重传 + 刷新七牛缓存） |
 | 仅 Homebrew / Chocolatey | **Publish Package Managers** → `workflow_dispatch` | 指定 `version`；可选 `skip_homebrew` / `skip_chocolatey` / `force_*` |
 
 ## GitHub Secrets
@@ -110,6 +111,7 @@ Formula 路径：`Formula/everkm-publish.rb`（单文件，`on_macos` / `on_linu
 | `scripts/install.sh` | curl 安装脚本 → CDN `install.sh` |
 | `scripts/publish-homebrew.py` | 生成 Formula → push homebrew-tap |
 | `scripts/publish-chocolatey.py` | 打 nupkg → `choco push` |
+| `templates/chocolateyInstall.ps1` | Chocolatey 安装脚本，PATH 命令 `everkm-publish` |
 | `.github/workflows/publish-npm.yaml` | CDN + npm |
 | `.github/workflows/publish-package-managers.yaml` | Homebrew + Chocolatey |
 
@@ -119,5 +121,5 @@ Formula 路径：`Formula/everkm-publish.rb`（单文件，`on_macos` / `on_linu
 |------|------|
 | Node | `npm i -g everkm-publish` |
 | Linux / macOS（curl） | `curl -fsSL https://ekmp-assets.everkm.com/install.sh \| bash` |
-| macOS / Linux（Homebrew） | `brew tap everkm/tap && brew install everkm-publish` |
+| macOS / Linux（Homebrew） | `brew tap everkm/tap && brew trust everkm/tap && brew install everkm-publish` |
 | Windows | `choco install everkm-publish` |
