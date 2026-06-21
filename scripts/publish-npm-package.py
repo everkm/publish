@@ -23,6 +23,7 @@ publish-npm-package.py
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import mimetypes
@@ -50,6 +51,7 @@ NPM_PACKAGE_NAME = "everkm-publish"
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS_DIR = REPO_ROOT / "publish-artifacts"
+INSTALL_SH = REPO_ROOT / "scripts" / "install.sh"
 
 logger = logging.getLogger("publish-npm-package")
 
@@ -166,20 +168,35 @@ def asset_download_urls(version: str, asset_name: str) -> list[str]:
     ]
 
 
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def build_latest_json(
     version: str,
     tag: str,
     notes: str,
     asset_names: list[str],
+    asset_sha256: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    assets = []
+    for name in asset_names:
+        entry: dict[str, Any] = {
+            "name": name,
+            "download_urls": asset_download_urls(version, name),
+        }
+        if asset_sha256 and name in asset_sha256:
+            entry["sha256"] = asset_sha256[name]
+        assets.append(entry)
     return {
         "version": version,
         "tag": tag,
         "notes": notes,
-        "assets": [
-            {"name": name, "download_urls": asset_download_urls(version, name)}
-            for name in asset_names
-        ],
+        "assets": assets,
     }
 
 
@@ -268,6 +285,8 @@ def cdn_refresh_urls(version: str, asset_names: list[str]) -> None:
     urls = [f"{CDN_CN}/pkgs/{version}/{name}" for name in asset_names]
     urls.append(f"{CDN_CN}/pkgs/{version}/meta.json")
     urls.append(f"{CDN_CN}/pkgs/latest.json")
+    urls.append(f"{CDN_CN}/install.sh")
+    urls.append(f"{CDN_CN}/pkgs/{version}/install.sh")
     ak = os.environ.get("QINIU_ACCESS_KEY")
     sk = os.environ.get("QINIU_SECRET_KEY")
     if not ak or not sk:
@@ -331,10 +350,12 @@ def publish(
         download_asset(url, local_path, token)
 
     if not skip_cdn:
+        asset_sha256: dict[str, str] = {}
         for name in asset_names:
             local_path = work_dir / name
             if not local_path.is_file():
                 raise RuntimeError(f"downloaded asset missing: {name}")
+            asset_sha256[name] = file_sha256(local_path)
             upload_file_both(
                 s3_client,
                 local_path,
@@ -342,7 +363,22 @@ def publish(
                 skip_if_exists=not force_cdn,
             )
 
-        meta = build_latest_json(version, tag, notes, asset_names)
+        if not INSTALL_SH.is_file():
+            raise RuntimeError(f"install script missing: {INSTALL_SH}")
+        upload_file_both(
+            s3_client,
+            INSTALL_SH,
+            "install.sh",
+            skip_if_exists=not force_cdn,
+        )
+        upload_file_both(
+            s3_client,
+            INSTALL_SH,
+            pkg_key(version, "install.sh"),
+            skip_if_exists=not force_cdn,
+        )
+
+        meta = build_latest_json(version, tag, notes, asset_names, asset_sha256)
 
         meta_path = work_dir / "meta.json"
         with meta_path.open("w", encoding="utf-8") as f:

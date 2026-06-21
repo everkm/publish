@@ -1,0 +1,23 @@
+class EverkmPublish < Formula
+  desc "Everkm Publish CLI"
+  homepage "https://github.com/everkm/publish"
+  version "{{ version }}"
+
+  on_macos do
+    url "{{ darwin_url }}"
+    sha256 "{{ darwin_sha256 }}"
+  end
+
+  on_linux do
+    url "{{ linux_url }}"
+    sha256 "{{ linux_sha256 }}"
+  end
+
+  def install
+    bin.install "everkm-publish.bin" => "everkm-publish"
+  end
+
+  test do
+    system "#{bin}/everkm-publish", "--version"
+  end
+end

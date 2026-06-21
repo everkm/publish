@@ -1,0 +1,221 @@
+name: Publish Package Managers
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semver，如 0.17.0"
+        required: true
+        type: string
+      skip_homebrew:
+        description: "跳过 Homebrew tap 更新"
+        type: boolean
+        default: false
+      skip_chocolatey:
+        description: "跳过 Chocolatey 发布"
+        type: boolean
+        default: false
+      force_homebrew:
+        description: "强制更新 Homebrew Formula（即使版本已存在）"
+        type: boolean
+        default: false
+      force_chocolatey:
+        description: "强制 push Chocolatey（即使版本已存在）"
+        type: boolean
+        default: false
+
+concurrency:
+  group: package-managers-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  homebrew:
+    runs-on: ubuntu-latest
+    outputs:
+      run_started_at: ${{ steps.record-start.outputs.run_started_at }}
+      skipped: ${{ steps.homebrew-run.outputs.skipped }}
+      version: ${{ steps.ver.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - id: record-start
+        run: echo "run_started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - id: ver
+        name: Resolve version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Try download shared release artifacts
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: release-assets-${{ steps.ver.outputs.version }}
+          path: publish-artifacts/${{ steps.ver.outputs.version }}/
+
+      - id: homebrew-run
+        name: Publish Homebrew formula
+        if: github.event_name != 'workflow_dispatch' || inputs.skip_homebrew != true
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          args=(--version "${{ steps.ver.outputs.version }}")
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_homebrew }}" = "true" ]; then
+            args+=(--force)
+          fi
+          python scripts/publish-homebrew.py "${args[@]}"
+          code=$?
+          if [ "$code" -eq 2 ]; then
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          exit "$code"
+
+  chocolatey:
+    if: github.event_name != 'workflow_dispatch' || inputs.skip_chocolatey != true
+    runs-on: windows-latest
+    outputs:
+      skipped: ${{ steps.chocolatey-run.outputs.skipped }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - id: ver
+        name: Resolve version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Try download shared release artifacts
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: release-assets-${{ steps.ver.outputs.version }}
+          path: publish-artifacts/${{ steps.ver.outputs.version }}/
+
+      - id: chocolatey-run
+        name: Publish Chocolatey package
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
+        shell: bash
+        run: |
+          if [ -z "$CHOCO_API_KEY" ]; then
+            echo "CHOCO_API_KEY secret not set, skip chocolatey publish"
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          args=(--version "${{ steps.ver.outputs.version }}")
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_chocolatey }}" = "true" ]; then
+            args+=(--force)
+          fi
+          python scripts/publish-chocolatey.py "${args[@]}"
+          code=$?
+          if [ "$code" -eq 2 ]; then
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          exit "$code"
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [homebrew, chocolatey]
+    if: always()
+    steps:
+      - name: Notify workflow run
+        env:
+          NOTIFY_DAYU_ENDPOINT: ${{ secrets.NOTIFY_DAYU_ENDPOINT }}
+          HOMEBREW_RESULT: ${{ needs.homebrew.result }}
+          HOMEBREW_SKIPPED: ${{ needs.homebrew.outputs.skipped }}
+          CHOCOLATEY_RESULT: ${{ needs.chocolatey.result }}
+          CHOCOLATEY_SKIPPED: ${{ needs.chocolatey.outputs.skipped }}
+          PUBLISH_VERSION: ${{ needs.homebrew.outputs.version }}
+          PUBLISH_TRIGGER: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_STARTED_AT: ${{ needs.homebrew.outputs.run_started_at }}
+          PYTHONIOENCODING: utf-8
+        run: |
+          if [ -z "$NOTIFY_DAYU_ENDPOINT" ]; then
+            echo "NOTIFY_DAYU_ENDPOINT secret not set, skip notify"
+            exit 0
+          fi
+          NOTIFY_URL="${NOTIFY_DAYU_ENDPOINT%/}/api/notify/tg"
+          python3 <<'PY' > /tmp/notify-payload.json
+          import json, os
+          from datetime import datetime, timezone
+
+          started_at = os.environ.get("RUN_STARTED_AT", "").strip()
+          if started_at:
+              start = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+              duration = "%.1f 分钟" % (
+                  (datetime.now(timezone.utc) - start).total_seconds() / 60)
+          else:
+              duration = "未知"
+
+          ver = os.environ.get("PUBLISH_VERSION") or "未知"
+          trigger = os.environ.get("PUBLISH_TRIGGER", "")
+
+          def label(job, skipped):
+              if skipped == "true":
+                  return "%s skipped" % job
+              return job
+
+          hb = label("Homebrew=%s" % os.environ.get("HOMEBREW_RESULT", "unknown"),
+                     os.environ.get("HOMEBREW_SKIPPED", ""))
+          ch = label("Chocolatey=%s" % os.environ.get("CHOCOLATEY_RESULT", "unknown"),
+                     os.environ.get("CHOCOLATEY_SKIPPED", ""))
+          result = "%s; %s" % (hb, ch)
+
+          b = (
+              "everkm-publish 包管理器发布工作流已完成。\n"
+              "总耗时：%s。\n"
+              "触发：%s\n"
+              "版本：%s\n"
+              "结果：%s\n"
+              "Action：%s"
+          ) % (duration, trigger, ver, result, os.environ["RUN_URL"])
+          overall = "success"
+          for key in ("HOMEBREW_RESULT", "CHOCOLATEY_RESULT"):
+              if os.environ.get(key) == "failure":
+                  overall = "failure"
+                  break
+          print(json.dumps({
+              "subject": "everkm-publish Package Managers（%s）" % overall,
+              "body": b,
+          }, ensure_ascii=False))
+          PY
+          curl --location "$NOTIFY_URL" \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/notify-payload.json

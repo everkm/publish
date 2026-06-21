@@ -78,6 +78,14 @@ jobs:
           fi
           exit "$code"
 
+      - name: Upload release assets for package managers
+        if: steps.publish-run.outputs.skipped != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-${{ steps.ver.outputs.version }}
+          path: publish-artifacts/${{ steps.ver.outputs.version }}/
+          retention-days: 7
+
       - name: Setup Node
         if: steps.publish-run.outputs.skipped != 'true'
         uses: actions/setup-node@v4
