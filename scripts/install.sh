@@ -44,10 +44,10 @@ detect_platform() {
       esac
       ;;
     mingw* | msys* | cygwin* | windows*)
-      fatal "Windows is not supported by this script. Use: choco install everkm-publish"
+      fatal "Windows is not supported by this script. Use: irm https://ekmp-assets.everkm.com/install.ps1 | iex"
       ;;
     *)
-      fatal "unsupported OS: $os (Linux/macOS only; Windows: choco install everkm-publish)"
+      fatal "unsupported OS: $os (Linux/macOS: install.sh; Windows: install.ps1)"
       ;;
   esac
 }

@@ -4,7 +4,8 @@
 publish-npm-package.py
 
 从 everkm/publish GitHub Release 拉取全部资产，镜像至 R2 / 七牛（pkgs/{ver}/），
-生成 pkgs/latest.json 与 pkgs/{ver}/meta.json（含上游 Release notes）。
+生成 pkgs/latest.json 与 pkgs/{ver}/meta.json（含上游 Release notes），
+上传 install.sh（Linux / macOS）与 install.ps1（Windows）。
 
 环境变量：
 - GH_TOKEN / GITHUB_TOKEN — 读 everkm/publish Release
@@ -58,6 +59,7 @@ NPM_PACKAGE_NAME = "everkm-publish"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS_DIR = REPO_ROOT / "publish-artifacts"
 INSTALL_SH = REPO_ROOT / "scripts" / "install.sh"
+INSTALL_PS1 = REPO_ROOT / "scripts" / "install.ps1"
 
 logger = logging.getLogger("publish-npm-package")
 
@@ -325,6 +327,8 @@ def cdn_refresh_urls(version: str, asset_names: list[str]) -> None:
     urls.append(f"{CDN_CN}/pkgs/latest.json")
     urls.append(f"{CDN_CN}/install.sh")
     urls.append(f"{CDN_CN}/pkgs/{version}/install.sh")
+    urls.append(f"{CDN_CN}/install.ps1")
+    urls.append(f"{CDN_CN}/pkgs/{version}/install.ps1")
     ak = os.environ.get("QINIU_ACCESS_KEY")
     sk = os.environ.get("QINIU_SECRET_KEY")
     if not ak or not sk:
@@ -403,6 +407,8 @@ def publish(
 
         if not INSTALL_SH.is_file():
             raise RuntimeError(f"install script missing: {INSTALL_SH}")
+        if not INSTALL_PS1.is_file():
+            raise RuntimeError(f"install script missing: {INSTALL_PS1}")
         upload_file_both(
             s3_client,
             INSTALL_SH,
@@ -413,6 +419,18 @@ def publish(
             s3_client,
             INSTALL_SH,
             pkg_key(version, "install.sh"),
+            skip_if_exists=not force_cdn,
+        )
+        upload_file_both(
+            s3_client,
+            INSTALL_PS1,
+            "install.ps1",
+            skip_if_exists=not force_cdn,
+        )
+        upload_file_both(
+            s3_client,
+            INSTALL_PS1,
+            pkg_key(version, "install.ps1"),
             skip_if_exists=not force_cdn,
         )
 
